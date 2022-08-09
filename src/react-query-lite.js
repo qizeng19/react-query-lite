@@ -69,7 +69,8 @@ export function useQuery({ queryKey, queryFn, staleTime, cacheTime }) {
     }
   
     React.useEffect(() => {
-        // 执行一下
+        // 把observer加入到query的subscribe列表中。进入的时候会去看是否需要执行fetch获取数据
+        // 卸载的时候 把query的subscribe列表这个observer删除掉。并开启一个删除这个query的定时器任务 cacheTime
         return observerRef.current.subscribe(rerender)
     }, [])
 
@@ -93,14 +94,17 @@ function createQuery(client, { queryKey, queryFn, cacheTime = 5 * 60 * 1000 }) {
         },
         subscribe: subscriber => {
             query.subscribers.push(subscriber)
-            query.unscheduleGC()
-            return () => {
+            query.unscheduleGC() // 删除之前的清除定时器任务
+            return () => { // 使用useQuery的那个组件卸载的时候会去执行
                 query.subscribers = query.subscribers.filter(d => d !== subscriber)
                 if (!query.subscribers.length) {
                     query.scheduleGC()
                 }
             }
         },
+        /**
+         * 倒计时 删除某一个query ，也就是cacheTime的实际意义。
+         */
         scheduleGC: () => {
             query.gcTimeout = setTimeout(() => {
                 client.queries = client.queries.filter(d => d !== query)
@@ -111,8 +115,8 @@ function createQuery(client, { queryKey, queryFn, cacheTime = 5 * 60 * 1000 }) {
         },
 
         setState: updater => {
-            query.state = updater(query.state)
-            query.subscribers.forEach(subscriber => subscriber.notify())
+            query.state = updater(query.state) // 更新数据
+            query.subscribers.forEach(subscriber => subscriber.notify()) // 重新渲染useQuery这个hooks 
         },
         fetch: () => {
             if (!query.promise) {
